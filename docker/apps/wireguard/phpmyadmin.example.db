@@ -1,0 +1,2 @@
+phpmyadmin.example.com.        IN  SOA phpmyadmin.example.com. youremail.example.com. 20200826 7200 3600 1209600 3600
+phpmyadmin.example.com.    IN  A   20.20.10.200

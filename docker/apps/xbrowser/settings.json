@@ -1,0 +1,54 @@
+{
+    "allowedOrigins": [],
+    "dailyNewSyncsLimit": 0,
+    "db": {
+      "authSource": "admin",
+      "connTimeout": 30000,
+      "host": "xbrowserdb",
+      "name": "xbrowsersync",
+      "useSRV": false,
+      "username": "",
+      "password": "",
+      "port": 27017
+    },
+    "location": "pt",
+    "log": {
+      "file": {
+        "enabled": true,
+        "level": "info",
+        "path": "/var/log/xBrowserSync/api.log",
+        "rotatedFilesToKeep": 5,
+        "rotationPeriod": "1d"
+      },
+      "stdout": {
+        "enabled": true,
+        "level": "info"
+      }
+    },
+    "maxSyncs": 10,
+    "maxSyncSize": 5120000,
+    "server": {
+      "behindProxy": true,
+      "host": "127.0.0.1",
+      "https": {
+        "certPath": "",
+        "enabled": false,
+        "keyPath": ""
+      },
+      "port": 8080,
+      "relativePath": "/"
+    },
+    "status": {
+      "allowNewSyncs": true,
+      "message": "",
+      "online": true
+    },
+    "tests": {
+      "db": "xbrowsersynctest",
+      "port": 8081
+    },
+    "throttle": {
+      "maxRequests": 1000,
+      "timeWindow": 300000
+    }
+   }

@@ -1,0 +1,79 @@
+###############################################################
+
+#                   Authelia configuration                    #
+
+###############################################################
+
+host: 0.0.0.0
+port: 9091
+log_level: warn
+
+#default-redirection-url
+default_redirection_url: https://authelia.$CHANGE_YOUR_MEDIA_DOMAIN
+
+# Add the default OTP configuration
+totp:  
+  issuer: authelia.com  
+  period: 30  
+  skew: 1
+
+authentication_backend:  
+  file:    
+    path: /config/users_database.yml    
+    password:      
+      algorithm: argon2id      
+      iterations: 1      
+      salt_length: 16      
+      parallelism: 8      
+      memory: 512 # blocks this much of the RAM. Tune this.
+
+access_control:  
+  default_policy: deny  
+  rules:    
+    - domain: authelia.$CHANGE_YOUR_MEDIA_DOMAIN
+      policy: bypass
+    - domain:
+        - $CHANGE_SABNZBD_SUBDOMAIN.$CHANGE_YOUR_MEDIA_DOMAIN
+        - $CHANGE_JACKETT_SUBDOMAIN.$CHANGE_YOUR_MEDIA_DOMAIN
+        - $CHANGE_HYDRA_SUBDOMAIN.$CHANGE_YOUR_MEDIA_DOMAIN
+        - $CHANGE_RADARR_SUBDOMAIN.$CHANGE_YOUR_MEDIA_DOMAIN
+        - $CHANGE_SONARR_SUBDOMAIN.$CHANGE_YOUR_MEDIA_DOMAIN
+        - $CHANGE_BAZARR_SUBDOMAIN.$CHANGE_YOUR_MEDIA_DOMAIN
+        - $CHANGE_MYLAR_SUBDOMAIN.$CHANGE_YOUR_MEDIA_DOMAIN
+        - $CHANGE_TORRENT_SUBDOMAIN.$CHANGE_YOUR_MEDIA_DOMAIN
+      resources:
+        - "^/.+$"
+      policy: bypass
+    - domain: $CHANGE_YOUR_MEDIA_DOMAIN
+      policy: two_factor
+    - domain: "*.$CHANGE_YOUR_MEDIA_DOMAIN"
+      policy: two_factor
+
+
+session:
+  name: authelia_session
+  expiration: 3600 # 1 hour
+  inactivity: 300 # 5 minutes
+  domain: $CHANGE_YOUR_MEDIA_DOMAIN # Should match whatever your root protected domain is
+  redis:    
+    host: redis    
+    port: 6379
+
+regulation:
+  max_retries: 3
+  find_time: 120
+  ban_time: 300
+
+storage:
+  mysql:
+    host: mariadb
+    port: 3306
+    database: $CHANGE_AUTHELIA2_DB_NAME
+    username: $CHANGE_AUTHELIA2_DB_USER
+
+notifier:
+  smtp:
+    username: $CHANGE_MAIL_USER
+    host: $CHANGE_MAIL_SERVER
+    port: 587 # Or 465
+    sender: $CHANGE_MAIL_USER

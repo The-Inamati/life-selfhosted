@@ -1,0 +1,31 @@
+server_location: http://synapse:8008
+server_name: $CHANGE_YOUR_DOMAIN
+shared_secret: $CHANGE_REGISTRATION_SECRET
+admin_secret: $CHANGE_ADMIN_SECRET
+riot_instance: https://element.$CHANGE_YOUR_DOMAIN
+db: postgresql://$CHANGE_DBUSER:$CHANGE_DBPASS@matrixdb:5432/$CHANGE_DBNAME
+host: '0.0.0.0'
+port: 5000
+rate_limit: ["100 per day", "10 per minute"]
+allow_cors: false
+logging:
+  disable_existing_loggers: False
+  version: 1
+  root:
+    level: DEBUG
+    handlers: [console]
+  formatters:
+    brief:
+      format: '%(name)s - %(levelname)s - %(message)s'
+    precise:
+      format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: INFO
+      formatter: brief
+      stream: ext://sys.stdout
+# password requirements
+password:
+  min_length: 8
+base_url: /registration

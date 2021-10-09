@@ -1,0 +1,28 @@
+{
+    "default_server_config": {
+            "m.homeserver": {
+                    "base_url": "https://matrix.$CHANGE_YOUR_DOMAIN",
+                    "server_name": "$CHANGE_YOUR_DOMAIN"
+            },
+            "m.identity_server": {
+                    "base_url": "https://matrix.$CHANGE_YOUR_DOMAIN"
+            }
+    },
+    "default_theme": "light",
+    "permalinkPrefix": "https://matrix.to",
+    "disable_custom_urls": true,
+    "disable_guests": true,
+    "brand": "Element",
+    "integrations_ui_url": "https://dimension.$CHANGE_YOUR_DOMAIN/element",
+    "integrations_rest_url": "https://dimension.$CHANGE_YOUR_DOMAIN/api/v1/scalar",
+    "integrations_widgets_urls": "https://dimension.$CHANGE_YOUR_DOMAIN/widgets",
+    "integrations_jitsi_widget_url": "https://dimension.$CHANGE_YOUR_DOMAIN/widgets/jitsi",
+    "bug_report_endpoint_url": "https://element.io/bugreports/submit",
+    "showLabsSettings": true,
+    "roomDirectory": {
+            "servers": "matrix.org"
+    },
+    "jitsi": {
+    "preferredDomain": "jitsi.$CHANGE_YOUR_DOMAIN"
+}   
+}

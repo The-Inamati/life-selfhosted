@@ -1,0 +1,2 @@
+redis.example.com.        IN  SOA redis.example.com. youremail.example.com. 20200826 7200 3600 1209600 3600
+redis.example.com.    IN  A   20.20.10.201

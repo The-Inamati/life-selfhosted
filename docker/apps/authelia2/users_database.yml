@@ -1,0 +1,8 @@
+users:
+  USERNAME:
+    displayname: "John Doe"
+    password: "HASHED_PASSWORD"
+    email: webmaster@example.com
+    groups:
+      - admins
+      - dev

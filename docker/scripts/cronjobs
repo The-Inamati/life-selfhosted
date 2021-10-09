@@ -1,0 +1,2 @@
+*/5 * * * * docker exec -u www-data nextcloud php /var/www/html/cron.php && curl -fsS -m 10 --retry 5 -o /dev/null https://healthchecks.example.com/ping/string_for_nextcloud
+0 * * * * docker exec -u www-data matomo php /var/www/html/console core:archive && curl -fsS -m 10 --retry 5 -o /dev/null https://healthchecks.example.com/ping/string_for_matomo

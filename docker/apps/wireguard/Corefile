@@ -1,0 +1,16 @@
+. {
+    loop
+    forward . /etc/resolv.conf
+}
+
+phpmyadmin.example.com:53 {
+    file phpmyadmin.example.db
+    log
+    errors
+}
+
+redis.example.com:53 {
+    file redis.example.db
+    log
+    errors
+}

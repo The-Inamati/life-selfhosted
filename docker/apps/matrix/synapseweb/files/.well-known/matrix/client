@@ -1,0 +1,28 @@
+{
+	"m.homeserver": {
+		"base_url": "https://matrix.$CHANGE_YOUR_DOMAIN"
+	},
+	"m.identity_server": {
+		"base_url": "https://matrix.$CHANGE_YOUR_DOMAIN"
+	},
+	"m.integrations": {
+		"managers": [{
+			"api_url": "https://dimension.$CHANGE_YOUR_DOMAIN/api/v1/scalar",
+			"ui_url": "https://dimension.$CHANGE_YOUR_DOMAIN/element"
+		}]
+	},
+	"io.element.jitsi": {
+		"preferredDomain": "jitsi.$CHANGE_YOUR_DOMAIN"
+	},
+	"im.vector.riot.jitsi": {
+		"preferredDomain": "jitsi.$CHANGE_YOUR_DOMAIN"
+	},
+	"io.element.e2ee": {
+		"default": true,
+		"secure_backup_required": false,
+		"secure_backup_setup_methods": ["key", "passphrase"]
+	},
+	"im.vector.riot.e2ee": {
+		"default": true
+	}
+}

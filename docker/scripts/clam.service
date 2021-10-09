@@ -1,0 +1,9 @@
+[Unit]
+Description=Automatic ClamAV Daily Scan
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /home/USER/docker/scripts/clamscan.sh
+
+[Install]
+WantedBy=multi-user.target

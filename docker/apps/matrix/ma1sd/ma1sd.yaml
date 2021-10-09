@@ -1,0 +1,56 @@
+matrix:
+  domain: $CHANGE_YOUR_DOMAIN
+  v1: true
+  v2: true
+
+server:
+  name: matrix.$CHANGE_YOUR_DOMAIN
+
+key:
+  path: /var/ma1sd/sign.key
+
+storage:
+  backend: postgresql
+  provider:
+    postgresql:
+      database: //matrixdb:5432/$CHANGE_MA1SD_DBNAME
+      username: $CHANGE_MA1SD_DBUSER
+      password: $CHANGE_MA1SD_DBPASS
+  
+
+
+dns:
+  overwrite:
+    homeserver:
+      client:
+        - name: matrix.$CHANGE_YOUR_DOMAIN
+          value: http://synapse:8008
+
+threepid:
+  medium:
+    email:
+      identity:
+        from: matrix@$CHANGE_YOUR_DOMAIN
+      connectors:
+        smtp:
+          host: $CHANGE_MAIL_SERVER
+          tls: 3
+          port: 465
+          login: $CHANGE_MATRIX_MAIL_USER
+          password: $CHANGE_MATRIX_MAIL_PASS
+
+hashing:
+  enabled: true # enable or disable the hash lookup MSC2140 (default is false)
+  pepperLength: 20 # length of the pepper value (default is 20)
+  rotationPolicy: per_requests # or `per_seconds` how often the hashes will be updating
+  hashStorageType: sql # or `in_memory` where the hashes will be stored
+  algorithms:
+    - none   # the same as v1 bulk lookup
+    - sha256 # hash the 3PID and pepper.
+  delay: 2m # how often hashes will be updated if rotation policy = per_seconds (default is 10s)
+  requests: 10
+
+synapseSql:
+  enabled: true
+  type: postgresql
+  connection: //matrixdb/$CHANGE_SYNAPSE_DBNAME?user=$CHANGE_SYNAPSE_DBUSER&password=$CHANGE_SYNAPSE_DBPASS

@@ -1,0 +1,28 @@
+# From Section
+set from = "server@example.com"
+set realname = "Your Server"
+
+# SMTP Details
+set smtp_url = smtps://server@example.com@mail.example.com:465/
+set smtp_pass = "server_email_password"
+set imap_user = "server@example.com"
+set imap_pass = "server_email_password"
+
+# Mailbox
+set folder = "imaps://mail.example.com:993"
+set spoolfile = "+INBOX"
+
+# Where to put the stuff
+set header_cache = "~/.mutt/cache/headers"
+set message_cachedir = "~/.mutt/cache/bodies"
+set certificate_file = "~/.mutt/certificates"
+
+# Etc
+set mail_check = 30
+set move = no
+set imap_keepalive = 900
+set sort = threads
+set editor = "nano"
+
+# GnuPG bootstrap
+# source ~/.mutt/gpg.rc

@@ -1,0 +1,1612 @@
+version: "3.8"
+
+#---Networks---#
+
+networks:
+  traefik:
+    external:
+      name: traefik
+  default:
+    driver: bridge
+  proxy:
+    external:
+      name: proxy
+  database:
+    external:
+      name: database    
+  media:
+    external:
+      name: media
+
+#---Volumes---#
+
+volumes:
+  redis:
+  mariadb:
+  wireguard:
+  bitwarden:
+  nextcloud:
+  xbrowser:
+  wallabag:
+  n8n:
+  firefly:
+  leantime:
+  matomo:
+  ghost:
+  gotify:
+  papermerge:
+  papermerge_data:
+  pwndrop:
+  freshrss:
+  ktn:
+  drop:
+  healthchecks:
+  diun:
+  # Matrix Server Volumes
+  matrixdb:
+  ma1sd:
+  jitsi:
+  jicofo:
+  jvb:
+  prosody:
+  registration:
+  synapse:
+  synapseweb:
+  discord:
+  whatsapp:
+  reminderbot:
+  dimension:
+  # Media Server Volumes
+  jackett:
+  hydra:
+  sabnzbd:
+  qbittorrent:
+  radarr:
+  sonarr:
+  bazarr:
+  mylar:
+  jellyfin:
+  ubooquity:
+  
+
+#---Secrets---#
+
+secrets:
+  cloudflare_api:
+    file: $SECRETSDIR/cloudflare_api
+  authelia_jwt_secret:
+    file: $SECRETSDIR/authelia_jwt_secret
+  authelia_session_secret:
+    file: $SECRETSDIR/authelia_session_secret
+  authelia_mysql_password:
+    file: $SECRETSDIR/authelia_mysql_password
+  authelia_notifier_password:
+    file: $SECRETSDIR/authelia_notifier_password
+  firefly_app_key:
+    file: $SECRETSDIR/firefly_app_key
+  firefly_db_name:
+    file: $SECRETSDIR/firefly_db_name
+  firefly_db_pass:
+    file: $SECRETSDIR/firefly_db_pass
+  firefly_db_user:
+    file: $SECRETSDIR/firefly_db_user
+  firefly_mail_host:
+    file: $SECRETSDIR/firefly_mail_host
+  firefly_mail:
+    file: $SECRETSDIR/firefly_mail
+  firefly_mail_pass:
+    file: $SECRETSDIR/firefly_mail_pass
+  authelia2_jwt_secret:
+    file: $SECRETSDIR/authelia2_jwt_secret
+  authelia2_session_secret:
+    file: $SECRETSDIR/authelia2_session_secret
+  authelia2_mysql_password:
+    file: $SECRETSDIR/authelia2_mysql_password
+  authelia2_notifier_password:
+    file: $SECRETSDIR/authelia2_notifier_password
+  healthchecks_email_password:
+    file: $SECRETSDIR/healthchecks_email_password
+  
+
+#---Services---#
+
+services:
+
+  # Traefik - Reverse Proxy
+  traefik:
+    container_name: traefik
+    image: traefik:chevrotin
+    restart: unless-stopped
+    command:
+      - --global.checkNewVersion=true
+      - --global.sendAnonymousUsage=true
+      - --entryPoints.http.address=:80
+      - --entryPoints.https.address=:443
+      - --entryPoints.traefik.address=:8080
+      - --entryPoints.synapse.address=:8448
+      - --api=true
+      - --log=true
+      - --log.level=DEBUG # (Default: error) DEBUG, INFO, WARN, ERROR, FATAL, PANIC
+      - --accessLog=true
+      - --accessLog.filePath=/traefik.log
+      - --accessLog.bufferingSize=100
+      - --accessLog.filters.statusCodes=400-499
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://proxy:2375
+      - --providers.docker.defaultrule=Host(`{{ index .Labels "com.docker.compose.service" }}.$DOMAINNAME1`)
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.network=traefik
+      - --entrypoints.https.http.tls.certresolver=dns-cloudflare
+      - --providers.docker.swarmMode=false
+      - --providers.file.directory=/rules
+      - --providers.file.watch=true
+#      - --certificatesResolvers.dns-cloudflare.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory # LetsEncrypt Staging Server - uncomment when $
+      - --certificatesResolvers.dns-cloudflare.acme.email=$CLOUDFLARE_EMAIL
+      - --certificatesResolvers.dns-cloudflare.acme.storage=/acme.json
+      - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.provider=cloudflare
+      - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
+    networks:
+      - traefik
+      - proxy
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - proxy
+    secrets:
+      - cloudflare_api
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host
+      - target: 8448
+        published: 8448
+        protocol: tcp
+        mode: host
+    volumes:
+      - $DOCKERDIR/apps/traefik/rules:/rules
+      - $DOCKERDIR/apps/traefik/acme/acme.json:/acme.json
+      - $DOCKERDIR/apps/traefik/traefik.log:/traefik.log
+    environment:
+      - CF_API_EMAIL=$CLOUDFLARE_EMAIL
+      - CF_API_KEY_FILE=/run/secrets/cloudflare_api
+    labels:
+      - traefik.enable=true
+      ## Services - API
+      - traefik.http.routers.traefik.service=api@internal
+      # HTTP-to-HTTPS Redirect
+      - traefik.http.routers.http-catchall.entrypoints=http
+      - traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)
+      - traefik.http.routers.http-catchall.middlewares=redirect-to-https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      # HTTP Routers
+      - traefik.http.routers.traefik.entrypoints=https
+      - traefik.http.routers.traefik.rule=Host(`$TRAEFIK_SUBDOMAIN.$DOMAINNAME1`)
+      - traefik.http.routers.traefik.tls=true
+#      - traefik.http.routers.traefik.tls.certresolver=dns-cloudflare # Comment out this line after first run of traefik to force the use of wildcard
+#      certs
+      - traefik.http.routers.traefik.tls.domains[0].main=$DOMAINNAME1
+      - traefik.http.routers.traefik.tls.domains[0].sans=*.$DOMAINNAME1
+      - traefik.http.routers.traefik.tls.domains[1].main=$DOMAINNAME2
+      - traefik.http.routers.traefik.tls.domains[1].sans=*.$DOMAINNAME2
+      - traefik.http.routers.traefik.tls.domains[2].main=$DOMAINNAME3
+      - traefik.http.routers.traefik.tls.domains[2].sans=*.$DOMAINNAME3
+      ## Middlewares
+      - traefik.http.routers.traefik.middlewares=chain-authelia@file
+#      - traefik.http.routers.traefik.middlewares=chain-no-auth@file # No Authentication
+
+  # Docker Socket Proxy
+  proxy:
+    container_name: proxy
+    image: tecnativa/docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    privileged: true
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    environment:
+      - LOG_LEVEL=info # debug,info,notice,warning,err,crit,alert,emerg
+      ## Variables match the URL prefix (i.e. AUTH blocks access to /auth/* parts of the API, etc.).
+      # 0 to revoke access.
+      # 1 to grant access.
+      ## Granted by Default
+      - EVENTS=1
+      - PING=1
+      - VERSION=1
+      ## Revoked by Default
+      # Security critical
+      - AUTH=0
+      - SECRETS=0
+      - POST=0
+      # Not always needed
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - CONTAINERS=1 # Traefik
+      - DISTRIBUTION=0
+      - EXEC=0
+      - IMAGES=0
+      - INFO=0
+      - NETWORKS=0
+      - NODES=0
+      - PLUGINS=0
+      - SERVICES=0
+      - SESSION=0
+      - SWARM=0
+      - SYSTEM=0
+      - TASKS=0
+      - VOLUMES=0
+
+  # Redis - Key-value Store
+  redis:
+    container_name: redis
+    image: redis:latest
+    restart: unless-stopped
+    entrypoint: redis-server --appendonly yes
+    networks:
+      - database
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - redis:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+
+  # Redis Commander - Redis Management Tool
+  rediscommander:
+    container_name: rediscommander
+    image: rediscommander/redis-commander:latest
+    restart: unless-stopped
+    networks:
+      database:
+        ipv4_address: 20.20.10.201
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - REDIS_HOST=redis
+
+  # phpMyAdmin - WebUI for MariaDB
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: phpmyadmin
+    hostname: phpmyadmin
+    restart: unless-stopped
+    networks:
+      database:
+        ipv4_address: 20.20.10.200
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+
+
+  # MariaDB – Database Server for your Apps
+  mariadb:
+    image: linuxserver/mariadb
+    container_name: mariadb
+    hostname: mariadb
+    restart: always
+    networks:
+      - database
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - mariadb:/config
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+
+  # Authelia  - SSO and 2FA
+  authelia:
+    container_name: authelia
+    image: authelia/authelia:4.21
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - database
+    depends_on:
+      - mariadb
+      - redis
+    volumes:
+      - $DOCKERDIR/apps/authelia:/config
+    environment:
+      - TZ=$TZ
+      - AUTHELIA_JWT_SECRET_FILE=/run/secrets/authelia_jwt_secret
+      - AUTHELIA_SESSION_SECRET_FILE=/run/secrets/authelia_session_secret
+      - AUTHELIA_STORAGE_MYSQL_PASSWORD_FILE=/run/secrets/authelia_mysql_password
+      - AUTHELIA_NOTIFIER_SMTP_PASSWORD_FILE=/run/secrets/authelia_notifier_password
+    secrets:
+      - authelia_jwt_secret
+      - authelia_session_secret
+      - authelia_mysql_password
+      - authelia_notifier_password
+    labels:
+      - traefik.enable=true
+      ## HTTP Routers
+      - traefik.http.routers.authelia.entrypoints=https
+      - traefik.http.routers.authelia.rule=Host(`authelia.$DOMAINNAME1`)
+      - traefik.http.routers.authelia.tls=true
+      ## Middlewares
+      - traefik.http.routers.authelia.middlewares=chain-authelia@file
+      ## HTTP Services
+      - traefik.http.routers.authelia.service=authelia
+      - traefik.http.services.authelia.loadbalancer.server.port=9091
+
+  # Wireguard - VPN Server
+  wireguard:
+    image: linuxserver/wireguard
+    container_name: wireguard
+    networks:
+      - database
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      - SERVERURL=$WIREGUARD_SUBDOMAIN.$DOMAINNAME1
+      - SERVERPORT=51820
+      - PEERS=1
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.14.0
+    volumes:
+      - wireguard:/config
+      - /lib/modules:/lib/modules
+      - $DOCKERDIR/apps/wireguard:/config/coredns
+    ports:
+      - 51820:51820/udp
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+  # Bitwarden - Password Manager
+  bitwarden:
+    image: bitwardenrs/server-mysql
+    container_name: bitwarden
+    networks:
+      - traefik
+      - database
+    restart: unless-stopped
+    volumes:
+      - bitwarden:/data
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DOMAIN: https://$BITWARDEN_SUBDOMAIN.$DOMAINNAME1
+      WEBSOCKET_ENABLED: 'true' # Required to use websockets
+      SIGNUPS_ALLOWED: 'false'   # set to false to disable signups
+      ADMIN_TOKEN: $BITWARDEN_ADMIN_TOKEN
+      DATABASE_URL: 'mysql://$BITWARDEN_DB_USER:$BITWARDEN_DB_PASS@mariadb/$BITWARDEN_DB_NAME'
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik
+      - traefik.http.routers.bitwarden.entrypoints=https
+      - traefik.http.routers.bitwarden.rule=Host(`$BITWARDEN_SUBDOMAIN.$DOMAINNAME1`)
+      - traefik.http.routers.bitwarden.service=bitwarden
+      - traefik.http.services.bitwarden.loadbalancer.server.port=80
+      - traefik.http.routers.bitwarden-hub.rule=Host(`$BITWARDEN_SUBDOMAIN.$DOMAINNAME1`) && Path(`/notifications/hub`)
+      - traefik.http.routers.bitwarden-hub.service=bitwarden-hub
+      - traefik.http.services.bitwarden-hub.loadbalancer.server.port=3012
+      - traefik.http.routers.bitwarden.middlewares=chain-no-auth@file
+
+  # NextCloud – Your Own Cloud Storage
+  nextcloud:
+    image: nextcloud:latest
+    container_name: nextcloud
+    restart: unless-stopped
+    networks:
+      - traefik
+      - database
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      NEXTCLOUD_TRUSTED_DOMAINS: $NEXTCLOUD_SUBDOMAIN.$DOMAINNAME1
+      APACHE_DISABLE_REWRITE_IP: 1
+      TRUSTED_PROXIES: 10.10.20.0/24
+    volumes:
+      - nextcloud:/var/www/html
+      - $DOCKERDIR/apps/nextcloud/changes.ini:/usr/local/etc/php/conf.d/changes.ini
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.nextcloud.entrypoints=https"
+      - "traefik.http.routers.nextcloud.rule=Host(`$NEXTCLOUD_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.nextcloud.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.nextcloud.service=nextcloud"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+      - "traefik.http.routers.nextcloud.middlewares=chain-no-auth@file"
+
+  # XBrowserSync - Bookmark Manager
+  xbrowserdb:
+    image: mongo:4.2.6
+    container_name: xbrowserdb
+    restart: unless-stopped
+    networks:
+      - database
+    volumes:
+      - xbrowser:/data/db
+      - $DOCKERDIR/apps/xbrowser/mongoconfig.js:/docker-entrypoint-initdb.d/mongoconfig.js
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - MONGO_INITDB_DATABASE=xbrowsersync
+      - MONGO_INITDB_ROOT_PASSWORD=$XBROWSER_DB_PASS
+      - MONGO_INITDB_ROOT_USERNAME=$XBROWSER_DB_USER
+
+  xbrowserapi:
+    image: xbrowsersync/api:latest
+    container_name: xbrowserapi
+    restart: unless-stopped
+    depends_on:
+      - xbrowserdb
+    networks:
+      - "traefik"
+      - database
+    volumes:
+      - "$DOCKERDIR/apps/xbrowser/settings.json:/usr/src/api/config/settings.json"
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - XBROWSERSYNC_DB_PWD=$XBROWSER_DB_PASS
+      - XBROWSERSYNC_DB_USER=$XBROWSER_DB_USER
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.xbrowser.entrypoints=https"
+      - "traefik.http.routers.xbrowser.rule=Host(`$XBROWSER_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.xbrowser.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.xbrowser.service=xbrowser"
+      - "traefik.http.services.xbrowser.loadbalancer.server.port=8080"
+      - "traefik.http.routers.xbrowser.middlewares=chain-no-auth@file"
+
+  # Wallabag - Read It Later
+  wallabag:
+    image: wallabag/wallabag
+    container_name: wallabag
+    restart: unless-stopped
+    networks:
+      - traefik
+      - database
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - SYMFONY__ENV__DATABASE_DRIVER=pdo_mysql
+      - SYMFONY__ENV__DATABASE_HOST=mariadb
+      - SYMFONY__ENV__DATABASE_PORT=3306
+      - SYMFONY__ENV__DATABASE_NAME=$WALLABAG_DB_NAME
+      - SYMFONY__ENV__DATABASE_USER=$WALLABAG_DB_USER
+      - SYMFONY__ENV__DATABASE_PASSWORD=$WALLABAG_DB_PASSWORD
+      - SYMFONY__ENV__DATABASE_CHARSET=utf8mb4
+      - SYMFONY__ENV__DOMAIN_NAME=https://$WALLABAG_SUBDOMAIN.${DOMAINNAME1}
+      - SYMFONY__ENV__SECRET=$WALLABAG_SECRET 
+      - SYMFONY__ENV__FOSUSER_REGISTRATION=false
+      - SYMFONY__ENV__FOSUSER_CONFIRMATION=false
+      - SYMFONY__ENV__REDIS_SCHEME=tcp
+      - SYMFONY__ENV__REDIS_HOST=redis
+      - SYMFONY__ENV__REDIS_PORT=6379
+      - POPULATE_DATABASE=false
+    volumes:
+      - wallabag:/var/www/wallabag/web/assets/images
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.wallabag.entrypoints=https"
+      - "traefik.http.routers.wallabag.rule=Host(`$WALLABAG_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.wallabag.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.wallabag.service=wallabag"
+      - "traefik.http.services.wallabag.loadbalancer.server.port=80"
+      - "traefik.http.routers.wallabag.middlewares=chain-no-auth@file"
+
+  # Node Automation
+  n8n:
+    image: n8nio/n8n
+    container_name: n8n
+    restart: unless-stopped
+    networks:
+      - traefik
+      - database
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - DB_TYPE=mysqldb
+      - DB_MYSQLDB_DATABASE=$N8N_DB_NAME
+      - DB_MYSQLDB_HOST=mariadb
+      - DB_MYSQLDB_PORT=3306
+      - DB_MYSQLDB_USER=$N8N_DB_USER
+      - DB_MYSQLDB_PASSWORD=$N8N_DB_PASS
+      - GENERIC_TIMEZONE=$TZ
+      - N8N_HOST=${N8N_SUBDOMAIN}.${DOMAINNAME1}
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - WEBHOOK_TUNNEL_URL=https://${N8N_SUBDOMAIN}.${DOMAINNAME1}/
+      - VUE_APP_URL_BASE_API=https://${N8N_SUBDOMAIN}.${DOMAINNAME1}/
+    volumes:
+      - n8n:/root/.n8n
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.n8n.entrypoints=https"
+      - "traefik.http.routers.n8n.rule=Host(`$N8N_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.n8n.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.n8n.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.n8n.service=n8n"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+
+  # Firefly III - Budget and Finance Manager
+  firefly:
+    image: jc5x/firefly-iii:latest
+    container_name: firefly
+    restart: unless-stopped
+    networks:
+      - traefik
+      - database
+    volumes:
+      - firefly:/var/www/firefly-iii
+    env_file: .firefly_env
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - firefly_app_key
+      - firefly_db_name
+      - firefly_db_pass
+      - firefly_db_user
+      - firefly_mail_host
+      - firefly_mail
+      - firefly_mail_pass
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+      MAIL_FROM_FILE: /run/secrets/firefly_mail
+      MAIL_USERNAME_FILE: /run/secrets/firefly_mail
+      MAIL_PASSWORD: /run/secrets/firefly_mail_pass
+      MAIL_HOST: /run/secrets/firefly_mail_host
+      DB_DATABASE_FILE: /run/secrets/firefly_db_name
+      DB_USERNAME_FILE: /run/secrets/firefly_db_user
+      DB_PASSWORD_FILE: /run/secrets/firefly_db_pass
+      APP_KEY_FILE: /run/secrets/firefly_app_key
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.firefly.entrypoints=https"
+      - "traefik.http.routers.firefly.rule=Host(`$FIREFLY_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.firefly.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.firefly.service=firefly"
+      - "traefik.http.services.firefly.loadbalancer.server.port=8080"
+      - "traefik.http.routers.firefly.middlewares=chain-no-auth@file"
+
+  # Leantime - Project Manager
+  leantime:
+    image: leantime/leantime:latest
+    container_name: leantime
+    networks:
+      - traefik
+      - database
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - LEAN_DB_HOST=mariadb
+      - LEAN_DB_USER=$LEANTIME_DB_USER
+      - LEAN_DB_PASSWORD=$LEANTIME_DB_PASS
+      - LEAN_DB_DATABASE=$LEANTIME_DB_NAME
+      - LEAN_APP_URL=https://$LEANTIME_SUBDOMAIN.${DOMAINNAME1}
+    restart: unless-stopped
+    volumes:
+      - leantime:/var/www/html
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.leantime.entrypoints=https"
+      - "traefik.http.routers.leantime.rule=Host(`$LEANTIME_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.leantime.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.leantime.service=leantime"
+      - "traefik.http.services.leantime.loadbalancer.server.port=80"
+      - "traefik.http.routers.leantime.middlewares=chain-no-auth@file"
+  
+  resume:
+    image: amruthpillai/reactive-resume:latest
+    container_name: resume
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - "traefik"
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.resume.entrypoints=https"
+      - "traefik.http.routers.resume.rule=Host(`$RESUME_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.resume.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.resume.service=resume"
+      - "traefik.http.services.resume.loadbalancer.server.port=80"
+      - "traefik.http.routers.resume.middlewares=chain-authelia@file"
+
+  draw:
+    image: fjudith/draw.io:latest
+    container_name: "draw"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - "traefik"
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.draw.entrypoints=https"
+      - "traefik.http.routers.draw.rule=Host(`$DRAW_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.draw.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.draw.service=draw"
+      - "traefik.http.services.draw.loadbalancer.server.port=8080"
+      - "traefik.http.routers.draw.middlewares=chain-authelia@file"
+
+  wikidb:
+    image: postgres:11-alpine
+    container_name: wikidb
+    networks:
+      - database
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: $WIKI_DB_NAME
+      POSTGRES_PASSWORD: $WIKI_DB_PASS
+      POSTGRES_USER: $WIKI_DB_USER
+    volumes:
+      - wikidb:/var/lib/postgresql/data
+
+  wiki:
+    image: requarks/wiki:latest
+    container_name: wiki
+    depends_on:
+      - wikidb
+    networks:
+      - traefik
+      - database
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: wikidb
+      DB_PORT: 5432
+      DB_USER: $WIKI_DB_USER
+      DB_PASS: $WIKI_DB_PASS
+      DB_NAME: $WIKI_DB_NAME
+    volumes:
+      - wiki:/wiki
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.wiki.entrypoints=https"
+      - "traefik.http.routers.wiki.rule=Host(`$WIKI_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.wiki.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.wiki.service=wiki"
+      - "traefik.http.services.wiki.loadbalancer.server.port=3000"
+      - "traefik.http.routers.wiki.middlewares=chain-no-auth@file"
+
+  matomo:
+    image: matomo:latest
+    container_name: matomo
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - "traefik"
+      - database
+    volumes:
+      - matomo:/var/www/html
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.matomo.entrypoints=https"
+      - "traefik.http.routers.matomo.rule=Host(`$MATOMO_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.matomo.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.matomo.service=matomo"
+      - "traefik.http.services.matomo.loadbalancer.server.port=80"
+
+  ghost:
+    image: ghost:latest
+    container_name: blog
+    networks:
+      - traefik
+      - database
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      database__client: mysql
+      database__connection__host: mariadb
+      database__connection__user: $GHOST_DB_USER
+      database__connection__password: $GHOST_DB_PASS
+      database__connection__database: $GHOST_DB_NAME
+      url: https://$DOMAINNAME3
+      mail__transport: SMTP
+      mail__options__service: mailcow
+      mail__options__host: $MAIL_SERVER 
+      mail__options__port: 465
+      mail__options__secureconnection: "true"
+      mail__options__auth__user: $GHOST_MAIL_USER
+      mail__options__auth__pass: $GHOST_MAIL_PASS
+      mail__from: "'$GHOST_FROM_NAME' <$GHOST_FROM_ADDRESS>"
+    volumes:
+      - ghost:/var/lib/ghost
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.ghost.entrypoints=https"
+      - "traefik.http.routers.ghost.rule=Host(`$DOMAINNAME3`)"
+      - "traefik.http.routers.ghost.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.ghost.service=ghost"
+      - "traefik.http.services.ghost.loadbalancer.server.port=2368"
+      - "traefik.http.routers.ghost.middlewares=chain-no-auth@file"
+
+  # Gotify - Push Notifications
+  gotify:
+    image: gotify/server
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - gotify:/app/data
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.gotify.entrypoints=https"
+      - "traefik.http.routers.gotify.rule=Host(`$GOTIFY_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.gotify.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.gotify.service=gotify"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+      - "traefik.http.routers.gotify.middlewares=chain-authelia@file"
+
+  # Papermerge - Document Management System
+  papermerge:
+    image: ghcr.io/linuxserver/papermerge
+    container_name: papermerge
+    restart: unless-stopped
+    networks:
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    volumes:
+      - papermerge:/config
+      - papermerge_data:/data
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.papermerge.entrypoints=https"
+      - "traefik.http.routers.papermerge.rule=Host(`$PAPERMERGE_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.papermerge.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.papermerge.service=papermerge"
+      - "traefik.http.services.papermerge.loadbalancer.server.port=8000"
+      - "traefik.http.routers.papermerge.middlewares=chain-authelia@file"
+
+  # Pwndrop - Simple File Transfer
+  pwndrop:
+    image: ghcr.io/linuxserver/pwndrop
+    container_name: pwndrop
+    restart: unless-stopped
+    networks:
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      - SECRET_PATH=/pwndrop
+    volumes:
+      - pwndrop:/config
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.pwndrop.entrypoints=https"
+      - "traefik.http.routers.pwndrop.rule=Host(`$PWNDROP_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.pwndrop.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.pwndrop.service=pwndrop"
+      - "traefik.http.services.pwndrop.loadbalancer.server.port=8080"
+      - "traefik.http.routers.pwndrop.middlewares=chain-authelia@file"
+
+  # FreshRSS - RSS Agregator
+  freshrss:
+    image: ghcr.io/linuxserver/freshrss
+    container_name: freshrss
+    networks:
+      - traefik
+      - database
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    restart: unless-stopped
+    volumes:
+      - freshrss:/config
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.freshrss.entrypoints=https"
+      - "traefik.http.routers.freshrss.rule=Host(`$FRESHRSS_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.freshrss.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.freshrss.service=freshrss"
+      - "traefik.http.services.freshrss.loadbalancer.server.port=80"
+      - "traefik.http.routers.freshrss.middlewares=chain-no-auth@file"
+
+  rssbridge:
+    image: rssbridge/rss-bridge:latest
+    container_name: rssbridge
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/apps/rssbridge/whitelist.txt:/app/whitelist.txt
+    networks:
+      - "traefik"
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.rssbridge.entrypoints=https"
+      - "traefik.http.routers.rssbridge.rule=Host(`$RSSBRIDGE_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.rssbridge.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.rssbridge.service=rssbridge"
+      - "traefik.http.services.rssbridge.loadbalancer.server.port=80"
+      - "traefik.http.routers.rssbridge.middlewares=chain-authelia@file"
+
+  rsshub:
+    image: diygod/rsshub
+    container_name: rsshub
+    restart: unless-stopped
+    networks:
+      - traefik
+      - database
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: redis
+      REDIS_URL: 'redis://redis:6379/'
+    depends_on:
+      - redis
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.rsshub.entrypoints=https"
+      - "traefik.http.routers.rsshub.rule=Host(`$RSSHUB_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.rsshub.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.rsshub.service=rsshub"
+      - "traefik.http.services.rsshub.loadbalancer.server.port=1200"
+      - "traefik.http.routers.rsshub.middlewares=chain-authelia@file"
+
+  ktn:
+    build: $DOCKERDIR/apps/ktn
+    container_name: ktn
+    networks:
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    volumes:
+      - ktn:/kill-the-newsletter/static
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.ktn.entrypoints=https"
+      - "traefik.http.routers.ktn.rule=Host(`$KTN_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.ktn.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.ktn.service=ktn"
+      - "traefik.http.services.ktn.loadbalancer.server.port=8000"
+      - "traefik.http.routers.ktn.middlewares=chain-authelia@file"
+
+  drop:
+    image: ghcr.io/linuxserver/snapdrop
+    container_name: drop
+	  restart: unless-stopped
+	  networks:
+      - traefik
+	  security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    volumes:
+      - drop:/config
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.drop.entrypoints=https"
+      - "traefik.http.routers.drop.rule=Host(`$DROP_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.drop.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.drop.service=drop"
+      - "traefik.http.services.drop.loadbalancer.server.port=80"
+      - "traefik.http.routers.drop.middlewares=chain-no-auth@file"
+
+  # Healthchecks - Cron Monitoring Tool
+  healthchecks:
+    image: ghcr.io/linuxserver/healthchecks
+    container_name: healthchecks
+    restart: unless-stopped
+    networks:
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      - DOCKER_MODS=linuxserver/mods:healthchecks-apprise
+      - SITE_ROOT=$HEALTHCHECKS_SUBDOMAIN.$DOMAINNAME1
+      - SITE_NAME=MyChecks
+      - DEFAULT_FROM_EMAIL=$HEALTHCHECKS_EMAIL_USER
+      - EMAIL_HOST=$MAIL_SERVER
+      - EMAIL_PORT=587
+      - EMAIL_HOST_USER=$HEALTHCHECKS_EMAIL_USER
+      - FILE__EMAIL_HOST_PASSWORD=/run/secrets/healthchecks_email_password
+      - EMAIL_USE_TLS=True
+      - ALLOWED_HOSTS=$HEALTHCHECKS_SUBDOMAIN.$DOMAINNAME1
+      - SUPERUSER_EMAIL=$HEALTHCHECKS_SUPERUSER_EMAIL
+      - SUPERUSER_PASSWORD=admin
+      - REGISTRATION_OPEN=False
+      - DEBUG=False
+    secrets:
+      - healthchecks_email_password
+    volumes:
+      - healthchecks:/config
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.healthchecks.entrypoints=https"
+      - "traefik.http.routers.healthchecks.rule=Host(`$HEALTHCHECKS_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.healthchecks.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.healthchecks.service=healthchecks"
+      - "traefik.http.services.healthchecks.loadbalancer.server.port=8000"
+      - "traefik.http.routers.healthchecks.middlewares=chain-no-auth@file"
+
+  # Docker Image Update Notifier
+  diun:
+    image: crazymax/diun:latest
+    container_name: diun
+    restart: unless-stopped
+    networks:
+      - proxy
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - diun:/data
+    environment:
+      - TZ=$TZ
+      - LOG_LEVEL=info
+      - LOG_JSON=false
+      - DIUN_PROVIDERS_DOCKER=true
+      - DIUN_PROVIDERS_DOCKER_WATCHSTOPPED=true
+      - DIUN_WATCH_HEALTHCHECKS_BASEURL=$HEALTCHCHECK_DIUN_URL
+      - DIUN_WATCH_HEALTHCHECKS_UUID=$HEALTHCHECK_DIUN_UUID
+      - DIUN_PROVIDERS_DOCKER_WATCHBYDEFAULT=true
+      - DIUN_WATCH_SCHEDULE=0 0 * * 5
+      - DIUN_WATCH_FIRSTCHECKNOTIF=true
+      - DIUN_PROVIDERS_DOCKER_ENDPOINT=tcp://proxy:2375
+      - DIUN_NOTIF_GOTIFY_ENDPOINT=$GOTIFY_URL
+      - DIUN_NOTIF_GOTIFY_TOKEN=$GOTIFY_DIUN_TOKEN
+      - DIUN_NOTIF_GOTIFY_PRIORITY=1
+      - DIUN_NOTIF_GOTIFY_TIMEOUT=10s
+
+  ### Matrix Server Stack
+
+  # Postgres for Matrix
+  matrixdb:
+    image: postgres:latest
+    container_name: matrixdb
+    restart: unless-stopped
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - POSTGRES_USER=$SYNAPSE_DB_USER
+      - POSTGRES_PASSWORD=$SYNAPSE_DB_PASS
+      - POSTGRES_DB=$SYNAPSE_DB_NAME
+      - POSTGRES_INITDB_ARGS=--lc-collate C --lc-ctype C --encoding UTF8
+    volumes:
+      - matrixdb:/var/lib/postgresql/data
+      - $DOCKERDIR/apps/matrix/matrixdb:/docker-entrypoint-initdb.d
+
+  # Traefik Certs Dumper
+  dumper:
+    image: ldez/traefik-certs-dumper:v2.7.4
+    container_name: dumper
+    restart: unless-stopped
+    networks:
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: sh -c '
+      apk add jq
+      ; while ! [ -e /data/acme.json ]
+      || ! [ `jq ".[] | .Certificates | length" /data/acme.json` != 0 ]; do
+      sleep 1
+      ; done
+      && traefik-certs-dumper file --version v2 --watch
+      --source /data/acme.json --dest /certs --domain-subdir --crt-ext=.pem --key-ext=.pem'
+    volumes:
+      - $DOCKERDIR/apps/traefik/acme:/data
+      - $DOCKERDIR/apps/dumper/certs:/certs:z
+
+  # Coturn
+  coturn:
+    image: instrumentisto/coturn:latest
+    container_name: coturn
+    restart: unless-stopped
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - 3478:3478
+      - 5349:5349
+      - 49152-49172:49152-49172
+    volumes:
+      - $DOCKERDIR/apps/matrix/coturn/turnserver.conf:/etc/coturn/turnserver.conf
+      - $DOCKERDIR/apps/dumper/certs:/certs:z
+
+  # MA1SD
+  ma1sd:
+    image: ma1uta/ma1sd:latest
+    container_name: ma1sd
+    restart: unless-stopped
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - MA1SD_LOG_LEVEL=debug
+    volumes:
+      - $DOCKERDIR/apps/matrix/ma1sd:/etc/ma1sd
+      - ma1sd:/var/ma1sd
+
+  # Element
+  element:
+    image: vectorim/element-web:latest
+    container_name: element
+    restart: unless-stopped
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/apps/matrix/element/config.json:/app/config.json
+      - $DOCKERDIR/apps/matrix/element/config.json:/app/config.element.undebug.com.json
+      - $DOCKERDIR/apps/matrix/element/nginx.conf:/etc/nginx/nginx.conf
+
+  jitsi:
+    image: jitsi/web:latest
+    container_name: jitsi
+    restart: unless-stopped
+    networks:
+      matrix:
+        aliases:
+          - meet.jitsi
+    security_opt:
+      - no-new-privileges:true
+    env_file: $DOCKERDIR/apps/matrix/jitsi/.env
+    volumes:
+      - jitsi:/config:Z
+
+  # XMPP server
+  prosody:
+    image: jitsi/prosody:latest
+    container_name: prosody
+    restart: unless-stopped
+    networks:
+      matrix:
+        aliases:
+          - xmpp.meet.jitsi
+    security_opt:
+      - no-new-privileges:true
+    env_file: $DOCKERDIR/apps/matrix/jitsi/.env
+    volumes:
+      - prosody:/config:Z
+
+
+  # Focus component
+  jicofo:
+    image: jitsi/jicofo:latest
+    container_name: jicofo
+    restart: unless-stopped
+    env_file: $DOCKERDIR/apps/matrix/jitsi/.env
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - jicofo:/config:Z
+    depends_on:
+      - prosody
+    networks:
+      - matrix
+
+  # Video bridge
+  jvb:
+    image: jitsi/jvb:latest
+    container_name: jvb
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    env_file: $DOCKERDIR/apps/matrix/jitsi/.env
+    networks:
+      matrix:
+        aliases:
+          - jvb.meet.jitsi
+    ports:
+      - '10000:10000/udp'
+      - '4443:4443'
+    volumes:
+      - jvb:/config:Z
+    depends_on:
+      - prosody
+
+  # Synapse Admin
+  synapseadmin:
+    image: awesometechnologies/synapse-admin:latest
+    container_name: synapseadmin
+    restart: unless-stopped
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+
+  registration:
+    image: zeratax/matrix-registration:v0.8.0
+    container_name: registration
+    restart: unless-stopped
+    command: serve
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/apps/matrix/registration:/config
+      - registration:/data
+
+  # Synapse
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: synapse
+    restart: unless-stopped
+    networks:
+      - matrix
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - synapse:/data
+      - $DOCKERDIR/apps/matrix/synapse/shared_secret/shared_secret_authenticator.py:/usr/local/lib/python3.8/site-packages/shared_secret_authenticator.py
+      - $DOCKERDIR/apps/matrix/synapse/antispam/synapse_simple_antispam:/usr/local/lib/python3.8/site-packages/synapse_simple_antispam
+      - $DOCKERDIR/apps/matrix/discord/registration.yaml:/discord-registration.yaml:z
+      - $DOCKERDIR/apps/matrix/whatsapp/registration.yaml:/whatsapp-registration.yaml:z
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.synapse.entrypoints=synapse"
+      - "traefik.http.routers.synapse.rule=Host(`matrix_SUBDOMAIN.$DOMAINNAME1`)"
+      - "traefik.http.routers.synapse.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.synapse.service=synapse"
+      - "traefik.http.services.synapse.loadbalancer.server.port=8048"
+      - "traefik.http.routers.synapse.middlewares=chain-no-auth@file"
+  
+  # Nginx for Matrix
+  synapseweb:
+    image: nginx:latest
+    container_name: synapseweb
+    restart: unless-stopped
+    networks:
+      - matrix
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/apps/matrix/synapseweb/nginx.conf:/etc/nginx/nginx.conf
+      - synapseweb:/nginx-data
+      - $DOCKERDIR/apps/matrix/synapseweb/conf.d:/etc/nginx/conf.d
+      - $DOCKERDIR/apps/matrix/synapseweb/files:/files
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.synapseweb.entrypoints=https"
+      - "traefik.http.routers.synapseweb.rule=Host(`matrix.$DOMAINNAME1`,`element.$DOMAINNAME1`,`jitsi.$DOMAINNAME1`,`dimension.$DOMAINNAME1`,`$DOMAINNAME1`)"
+      - "traefik.http.routers.synapseweb.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.synapseweb.service=synapseweb"
+      - "traefik.http.services.synapseweb.loadbalancer.server.port=8080"
+#      - "traefik.http.routers.synapseweb.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.synapseweb.middlewares=chain-authelia@file"
+
+  # Discord Bridge for Matrix
+  discord:
+    image: sorunome/mx-puppet-discord:latest
+    container_name: discord
+    restart: unless-stopped
+    environment:
+      - CONFIG_PATH=/config/config.yaml
+      - REGISTRATION_PATH=/config/registration.yaml
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/apps/matrix/discord:/config:z
+      - discord:/data:z
+
+  # Whatsapp Bridge for Matrix
+  whatsapp:
+    image: dock.mau.dev/tulir/mautrix-whatsapp:latest
+    command: /usr/bin/mautrix-whatsapp -c /config/config.yaml -r /config/registration.yaml
+    container_name: whatsapp
+    restart: unless-stopped
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/apps/matrix/whatsapp:/config:z
+      - whatsapp:/data
+
+  # Dimension for Matrix
+  dimension:
+    image: turt2live/matrix-dimension:latest
+    container_name: dimension
+    restart: unless-stopped
+    networks:
+      - matrix
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - dimension:/data:z
+
+### Media Stack
+
+# SABnzbd - Binary newsgrabber (NZB downloader)
+  # Disable SABNnzbd's built-in HTTPS support for traefik proxy to work
+  sabnzbd:
+    image: linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    restart: unless-stopped
+    networks:
+      - media
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - sabnzbd:/config
+      - $MEDIADIR/downloads:/downloads
+      - $MEDIADIR/downloads/incomplete:/incomplete-downloads
+      - $MEDIADIR/library:/library
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+      UMASK_SET: 002
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth
+      - "traefik.http.routers.sabnzbd.entrypoints=https"
+      - "traefik.http.routers.sabnzbd.tls=true"
+      - "traefik.http.routers.sabnzbd.rule=Host(`$SABNZBD_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.sabnzbd.priority=99"
+      ## Middlewares
+      - "traefik.http.routers.sabnzbd.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.sabnzbd.service=sabnzbd"
+      - "traefik.http.services.sabnzbd.loadbalancer.server.port=8080"
+
+ # Jackett - Torrent proxy
+  jackett:
+    image: linuxserver/jackett:latest
+    container_name: jackett
+    restart: always
+    networks:
+      - media
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - jackett:/config
+      - $MEDIADIR/downloads:/downloads
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.jackett.entrypoints=https"
+      - "traefik.http.routers.jackett.rule=Host(`$JACKETT_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.jackett.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.jackett.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.jackett.service=jackett"
+      - "traefik.http.services.jackett.loadbalancer.server.port=9117"
+
+ # NZBHydra2 - NZB meta search
+  hydra:
+    image: linuxserver/nzbhydra2:latest
+    container_name: hydra
+    restart: unless-stopped
+    networks:
+      - media
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - hydra:/config
+      - $MEDIADIR/downloads:/downloads
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.hydra.entrypoints=https"
+      - "traefik.http.routers.hydra.rule=Host(`$HYDRA_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.hydra.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.hydra.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.hydra.service=hydra"
+      - "traefik.http.services.hydra.loadbalancer.server.port=5076"
+
+  # Radarr - Movie management
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    networks:
+      - media
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - radarr:/config
+      - $MEDIADIR/downloads:/downloads
+      - $MEDIADIR/library:/library
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth
+      - "traefik.http.routers.radarr.entrypoints=https"
+      - "traefik.http.routers.radarr.tls=true"
+      - "traefik.http.routers.radarr.rule=Host(`$RADARR_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.radarr.priority=99"
+      ## Middlewares
+      - "traefik.http.routers.radarr.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.radarr.service=radarr"
+      - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+
+# Sonarr - TV Shows management
+  sonarr:
+    image: linuxserver/sonarr:preview
+    container_name: sonarr
+    restart: unless-stopped
+    networks:
+      - media
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - sonarr:/config
+      - $MEDIADIR/downloads:/downloads
+      - $MEDIADIR/library:/library
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth
+      - "traefik.http.routers.sonarr.entrypoints=https"
+      - "traefik.http.routers.sonarr.tls=true"
+      - "traefik.http.routers.sonarr.rule=Host(`$SONARR_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.sonarr.priority=99"
+      ## Middlewares
+      - "traefik.http.routers.sonarr.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.sonarr.service=sonarr"
+      - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+
+ # Jellyfin - Media Server
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    networks:
+      - media
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+      UMASK_SET: 022
+    volumes:
+      - jellyfin:/config
+      - /dev/shm:/ram_transcode
+      - $MEDIADIR/library:/library
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.jellyfin.entrypoints=https"
+      - "traefik.http.routers.jellyfin.rule=Host(`$JELLYFIN_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.jellyfin.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.jellyfin.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.jellyfin.service=jellyfin"
+      - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
+
+ # Bazarr - Subtitle Downloader
+  bazarr:
+    image: linuxserver/bazarr:latest
+    container_name: bazarr
+    restart: unless-stopped
+    networks:
+      - media
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - bazarr:/config
+      - $MEDIADIR/library:/library
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.bazarr.entrypoints=https"
+      - "traefik.http.routers.bazarr.rule=Host(`$BAZARR_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.bazarr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.bazarr.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.bazarr.service=bazarr"
+      - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
+
+# Qbittorrent - Torrent Downloader
+  qbittorrent:
+    image: linuxserver/qbittorrent
+    container_name: qbittorrent
+    hostname: qbittorrent
+    restart: unless-stopped
+    networks:
+      - media
+      - traefik
+    ports:
+      - "6882:6881"
+      - "6882:6881/udp"
+    volumes:
+      - qbittorrent:/config
+      - ${MEDIADIR}/downloads:/downloads
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      UMASK: 022
+      WEBUI_PORT: 8168
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.qbittorrent.entrypoints=https"
+      - "traefik.http.routers.qbittorrent.rule=Host(`$QBITTORRENT_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.qbittorrent.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.qbittorrent.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.qbittorrent.service=qbittorrent"
+      - "traefik.http.services.qbittorrent.loadbalancer.server.port=8168"
+
+ # Mylar - Comic Downloader
+  mylar:
+    image: linuxserver/mylar3
+    container_name: mylar
+    networks:
+      media:
+        ipv4_address: $MYLAR_IP
+      traefik:
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+    volumes:
+      - mylar:/config
+      - $MEDIADIR/library:/library
+      - $MEDIADIR/downloads:/downloads
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.mylar.entrypoints=https"
+      - "traefik.http.routers.mylar.rule=Host(`$MYLAR_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.mylar.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.mylar.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.mylar.service=mylar"
+      - "traefik.http.services.mylar.loadbalancer.server.port=8090"
+
+# Ubooquity - Ebook and Comic Reader
+  ubooquity:
+    image: linuxserver/ubooquity
+    container_name: ubooquity
+    networks:
+      - media
+      - traefik
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    volumes:
+      - ubooquity:/config
+      - $MEDIADIR/library/books:/books
+      - $MEDIADIR/library/comics:/comics
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.ubooquity.entrypoints=https"
+      - "traefik.http.routers.ubooquity.rule=Host(`$UBOOQUITY_SUBDOMAIN.$DOMAINNAME2`)"
+      - "traefik.http.routers.ubooquity.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.ubooquity.middlewares=chain-authelia2@file"
+      ## HTTP Services
+      - "traefik.http.routers.ubooquity.service=ubooquity"
+      - "traefik.http.services.ubooquity.loadbalancer.server.port=2202"
