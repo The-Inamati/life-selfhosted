@@ -1,7 +1,5 @@
 # My-Self-Hosted-Life
 
-**DEPRECATED:** This project was abandoned in favor of kubernetes. Please refer to the new repo at .
-
 This project started has a way to learn more about opensource, web apps, linux and docker.
 
 The more I learned the more I realized that I should own my own data and that I was giving companies a lot of my personal information without my knowledge.
